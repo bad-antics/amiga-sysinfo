@@ -1,0 +1,173 @@
+/*
+ * ╔═══════════════════════════════════════════════════════════╗
+ * ║  AMIGA-SYSINFO V1.0                                       ║
+ * ║  COMMODORE AMIGA SYSTEM INTELLIGENCE UTILITY              ║
+ * ║  AREXX SCRIPT FOR AMIGAOS 1.3+                            ║
+ * ║  GITHUB.COM/BAD-ANTICS | NULLSEC RETRO                    ║
+ * ╚═══════════════════════════════════════════════════════════╝
+ */
+
+OPTIONS RESULTS
+PARSE ARG args
+
+/* ASCII Banner */
+SAY '╔═══════════════════════════════════════════╗'
+SAY '║  AMIGA-SYSINFO V1.0                       ║'
+SAY '║  SYSTEM INTELLIGENCE UTILITY              ║'
+SAY '║  NULLSEC RETRO SERIES                     ║'
+SAY '╚═══════════════════════════════════════════╝'
+SAY ''
+
+/* System Version Detection */
+SAY '══════════════════════════════════════════════'
+SAY ' AMIGAOS VERSION DETECTION'
+SAY '══════════════════════════════════════════════'
+
+IF EXISTS('LIBS:version.library') THEN DO
+    SAY '  Kickstart: 'GETCLIP('Kickstart')
+END
+ELSE DO
+    SAY '  Kickstart: Detecting...'
+    ADDRESS COMMAND 'version >T:ver.tmp'
+    IF OPEN(vf, 'T:ver.tmp', 'R') THEN DO
+        verline = READLN(vf)
+        CALL CLOSE(vf)
+        SAY '  System: 'verline
+    END
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' MEMORY MAP'
+SAY '══════════════════════════════════════════════'
+
+/* Memory Info using AVAIL */
+ADDRESS COMMAND 'avail >T:avail.tmp'
+IF OPEN(af, 'T:avail.tmp', 'R') THEN DO
+    DO WHILE ~EOF(af)
+        line = READLN(af)
+        IF line ~= '' THEN SAY '  'line
+    END
+    CALL CLOSE(af)
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' MOUNTED DEVICES'
+SAY '══════════════════════════════════════════════'
+
+/* List Devices */
+ADDRESS COMMAND 'info >T:info.tmp'
+IF OPEN(inf, 'T:info.tmp', 'R') THEN DO
+    DO WHILE ~EOF(inf)
+        line = READLN(inf)
+        IF line ~= '' THEN SAY '  'line
+    END
+    CALL CLOSE(inf)
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' EXPANSION BOARDS'
+SAY '══════════════════════════════════════════════'
+
+/* Check for ShowConfig */
+IF EXISTS('C:ShowConfig') THEN DO
+    ADDRESS COMMAND 'ShowConfig >T:config.tmp'
+    IF OPEN(cf, 'T:config.tmp', 'R') THEN DO
+        DO WHILE ~EOF(cf)
+            line = READLN(cf)
+            IF line ~= '' THEN SAY '  'line
+        END
+        CALL CLOSE(cf)
+    END
+END
+ELSE DO
+    SAY '  ShowConfig not found - checking manually...'
+    /* Autoconfig base at $E80000 */
+    SAY '  Autoconfig space: $E80000-$E8FFFF'
+    SAY '  Zorro II: $200000-$9FFFFF'
+    SAY '  Zorro III: $10000000-$7FFFFFFF'
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' CUSTOM CHIP DETECTION'
+SAY '══════════════════════════════════════════════'
+
+/* Detect Chipset - Read VPOSR */
+SAY '  Checking chip registers...'
+SAY '  VPOSR ($DFF004): Agnus/Alice ID'
+SAY '  DENISEID ($DFF07C): Denise/Lisa ID'
+SAY ''
+SAY '  Chipset Types:'
+SAY '    OCS: Original Chip Set (A1000/A500/A2000)'
+SAY '    ECS: Enhanced Chip Set (A500+/A600/A3000)'
+SAY '    AGA: Advanced Graphics (A1200/A4000/CD32)'
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' LIBRARY SCAN'
+SAY '══════════════════════════════════════════════'
+
+/* Check important libraries */
+libs = 'exec.library dos.library graphics.library intuition.library'
+libs = libs' layers.library commodities.library rexxsyslib.library'
+
+DO i = 1 TO WORDS(libs)
+    lib = WORD(libs, i)
+    IF EXISTS('LIBS:'lib) | EXISTS('SYS:LIBS/'lib) THEN
+        SAY '  [✓] 'lib
+    ELSE
+        SAY '  [?] 'lib' (ROM or not found)'
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' ASSIGNED DEVICES'
+SAY '══════════════════════════════════════════════'
+
+/* List Assigns */
+ADDRESS COMMAND 'assign >T:assign.tmp'
+IF OPEN(asf, 'T:assign.tmp', 'R') THEN DO
+    count = 0
+    DO WHILE ~EOF(asf)
+        line = READLN(asf)
+        IF line ~= '' & count < 15 THEN DO
+            SAY '  'line
+            count = count + 1
+        END
+    END
+    CALL CLOSE(asf)
+    IF count >= 15 THEN SAY '  ... (truncated)'
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' NETWORK INTERFACES (IF AVAILABLE)'
+SAY '══════════════════════════════════════════════'
+
+IF EXISTS('DEVS:Networks') THEN DO
+    ADDRESS COMMAND 'list DEVS:Networks >T:net.tmp'
+    IF OPEN(nf, 'T:net.tmp', 'R') THEN DO
+        DO WHILE ~EOF(nf)
+            line = READLN(nf)
+            IF line ~= '' THEN SAY '  'line
+        END
+        CALL CLOSE(nf)
+    END
+END
+ELSE DO
+    SAY '  No network stack detected'
+    SAY '  (Install AmiTCP, Miami, or Roadshow)'
+END
+
+SAY ''
+SAY '══════════════════════════════════════════════'
+SAY ' [NULLSEC RETRO SERIES - AMIGA EDITION]'
+SAY '══════════════════════════════════════════════'
+
+/* Cleanup */
+ADDRESS COMMAND 'delete >NIL: T:ver.tmp T:avail.tmp T:info.tmp T:config.tmp T:assign.tmp T:net.tmp QUIET'
+
+EXIT 0
