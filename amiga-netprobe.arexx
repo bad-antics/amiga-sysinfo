@@ -1,0 +1,229 @@
+/* ══════════════════════════════════════════════════════ */
+/*  AMIGA-NETPROBE V1.0                                 */
+/*  NETWORK RECONNAISSANCE UTILITY FOR COMMODORE AMIGA  */
+/*  GITHUB.COM/BAD-ANTICS | NULLSEC RETRO SERIES        */
+/* ══════════════════════════════════════════════════════ */
+
+OPTIONS RESULTS
+SIGNAL ON ERROR
+SIGNAL ON BREAK_C
+
+SAY ''
+SAY '╔══════════════════════════════════════════════╗'
+SAY '║  AMIGA-NETPROBE V1.0                        ║'
+SAY '║  NETWORK RECONNAISSANCE TOOL                ║'
+SAY '║  NullSec Retro Series                       ║'
+SAY '╚══════════════════════════════════════════════╝'
+SAY ''
+
+/* ── CHECK NETWORK STACK ──────────────────────────── */
+SAY '[ NETWORK STACK DETECTION ]'
+SAY '═══════════════════════════'
+
+STACK = 'UNKNOWN'
+ADDRESS COMMAND 'Version >T:netprobe_ver AmiTCP'
+IF RC = 0 THEN DO
+   STACK = 'AmiTCP'
+   IF OPEN('vf','T:netprobe_ver','R') THEN DO
+      VER = READLN('vf')
+      CALL CLOSE('vf')
+      SAY '  Stack:   AmiTCP'
+      SAY '  Version: ' || VER
+   END
+END
+ELSE DO
+   ADDRESS COMMAND 'Version >T:netprobe_ver Miami'
+   IF RC = 0 THEN DO
+      STACK = 'Miami'
+      IF OPEN('vf','T:netprobe_ver','R') THEN DO
+         VER = READLN('vf')
+         CALL CLOSE('vf')
+         SAY '  Stack:   Miami'
+         SAY '  Version: ' || VER
+      END
+   END
+   ELSE DO
+      ADDRESS COMMAND 'Version >T:netprobe_ver Roadshow'
+      IF RC = 0 THEN DO
+         STACK = 'Roadshow'
+         IF OPEN('vf','T:netprobe_ver','R') THEN DO
+            VER = READLN('vf')
+            CALL CLOSE('vf')
+            SAY '  Stack:   Roadshow'
+            SAY '  Version: ' || VER
+         END
+      END
+      ELSE DO
+         SAY '  Stack:   NONE DETECTED'
+         SAY '  Warning: No TCP/IP stack found!'
+      END
+   END
+END
+SAY ''
+
+/* ── INTERFACE ENUMERATION ────────────────────────── */
+SAY '[ NETWORK INTERFACES ]'
+SAY '══════════════════════'
+
+ADDRESS COMMAND 'ifconfig -a >T:netprobe_if 2>NIL:'
+IF RC = 0 THEN DO
+   IF OPEN('ifh','T:netprobe_if','R') THEN DO
+      DO WHILE ~EOF('ifh')
+         LINE = READLN('ifh')
+         IF LINE ~= '' THEN SAY '  ' || LINE
+      END
+      CALL CLOSE('ifh')
+   END
+END
+ELSE SAY '  ifconfig not available'
+SAY ''
+
+/* ── ARP TABLE DUMP ───────────────────────────────── */
+SAY '[ ARP TABLE - NEIGHBOR DISCOVERY ]'
+SAY '══════════════════════════════════'
+
+ADDRESS COMMAND 'arp -a >T:netprobe_arp 2>NIL:'
+IF RC = 0 THEN DO
+   COUNT = 0
+   IF OPEN('af','T:netprobe_arp','R') THEN DO
+      DO WHILE ~EOF('af')
+         LINE = READLN('af')
+         IF LINE ~= '' THEN DO
+            COUNT = COUNT + 1
+            SAY '  ' || LINE
+         END
+      END
+      CALL CLOSE('af')
+   END
+   SAY '  Neighbors found: ' || COUNT
+END
+ELSE SAY '  arp command not available'
+SAY ''
+
+/* ── ROUTING TABLE ────────────────────────────────── */
+SAY '[ ROUTING TABLE ]'
+SAY '═════════════════'
+
+ADDRESS COMMAND 'netstat -r >T:netprobe_rt 2>NIL:'
+IF RC = 0 THEN DO
+   IF OPEN('rf','T:netprobe_rt','R') THEN DO
+      DO WHILE ~EOF('rf')
+         LINE = READLN('rf')
+         IF LINE ~= '' THEN SAY '  ' || LINE
+      END
+      CALL CLOSE('rf')
+   END
+END
+ELSE SAY '  netstat not available'
+SAY ''
+
+/* ── DNS RESOLVER CONFIG ──────────────────────────── */
+SAY '[ DNS CONFIGURATION ]'
+SAY '═════════════════════'
+
+DNSFILES = 'AmiTCP:db/resolv.conf Miami:resolv.conf ENVARC:Sys/resolv.conf'
+FOUND = 0
+DO I = 1 TO WORDS(DNSFILES)
+   DFILE = WORD(DNSFILES, I)
+   IF OPEN('df', DFILE, 'R') THEN DO
+      SAY '  Config: ' || DFILE
+      DO WHILE ~EOF('df')
+         LINE = READLN('df')
+         IF LINE ~= '' THEN SAY '    ' || LINE
+      END
+      CALL CLOSE('df')
+      FOUND = 1
+   END
+END
+IF FOUND = 0 THEN SAY '  No DNS configuration found'
+SAY ''
+
+/* ── PORT SCAN (COMMON PORTS) ─────────────────────── */
+SAY '[ LOCAL PORT CHECK ]'
+SAY '════════════════════'
+
+ADDRESS COMMAND 'netstat -an >T:netprobe_ns 2>NIL:'
+IF RC = 0 THEN DO
+   LISTEN = 0
+   ESTAB = 0
+   IF OPEN('nf','T:netprobe_ns','R') THEN DO
+      DO WHILE ~EOF('nf')
+         LINE = READLN('nf')
+         IF POS('LISTEN', UPPER(LINE)) > 0 THEN DO
+            LISTEN = LISTEN + 1
+            SAY '  [LISTEN] ' || STRIP(LINE)
+         END
+         IF POS('ESTABLISHED', UPPER(LINE)) > 0 THEN DO
+            ESTAB = ESTAB + 1
+            SAY '  [ESTAB]  ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('nf')
+   END
+   SAY '  Listening ports:      ' || LISTEN
+   SAY '  Established sessions: ' || ESTAB
+END
+ELSE SAY '  netstat not available'
+SAY ''
+
+/* ── SANA-II DEVICE SCAN ──────────────────────────── */
+SAY '[ SANA-II NETWORK DEVICES ]'
+SAY '═══════════════════════════'
+
+SANADEVS = 'DEVS:Networks/'
+ADDRESS COMMAND 'List >T:netprobe_sana ' || SANADEVS || ' 2>NIL:'
+IF RC = 0 THEN DO
+   IF OPEN('sf','T:netprobe_sana','R') THEN DO
+      DO WHILE ~EOF('sf')
+         LINE = READLN('sf')
+         IF LINE ~= '' & POS('.device', LINE) > 0 THEN DO
+            SAY '  Device: ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('sf')
+   END
+END
+ELSE SAY '  No SANA-II devices directory found'
+SAY ''
+
+/* ── HOSTS FILE ───────────────────────────────────── */
+SAY '[ KNOWN HOSTS ]'
+SAY '═══════════════'
+
+HOSTFILES = 'AmiTCP:db/hosts Miami:hosts ENVARC:Sys/hosts'
+FOUND = 0
+DO I = 1 TO WORDS(HOSTFILES)
+   HFILE = WORD(HOSTFILES, I)
+   IF OPEN('hf', HFILE, 'R') THEN DO
+      SAY '  Hosts file: ' || HFILE
+      DO WHILE ~EOF('hf')
+         LINE = READLN('hf')
+         IF LINE ~= '' & LEFT(LINE,1) ~= '#' THEN SAY '    ' || LINE
+      END
+      CALL CLOSE('hf')
+      FOUND = 1
+   END
+END
+IF FOUND = 0 THEN SAY '  No hosts file found'
+SAY ''
+
+/* ── CLEANUP ──────────────────────────────────────── */
+ADDRESS COMMAND 'Delete >NIL: T:netprobe_#? QUIET'
+
+SAY '╔══════════════════════════════════════════════╗'
+SAY '║  SCAN COMPLETE                               ║'
+SAY '║  Stay Retro. Stay Secure.                    ║'
+SAY '╚══════════════════════════════════════════════╝'
+SAY ''
+
+EXIT 0
+
+ERROR:
+   SAY 'Error at line ' || SIGL || ': ' || RC
+   ADDRESS COMMAND 'Delete >NIL: T:netprobe_#? QUIET'
+   EXIT 1
+
+BREAK_C:
+   SAY 'Interrupted by user'
+   ADDRESS COMMAND 'Delete >NIL: T:netprobe_#? QUIET'
+   EXIT 0

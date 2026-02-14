@@ -1,0 +1,218 @@
+/* ══════════════════════════════════════════════════════ */
+/*  AMIGA-DISKAUDIT V1.0                                */
+/*  FILESYSTEM SECURITY AUDITOR FOR COMMODORE AMIGA     */
+/*  GITHUB.COM/BAD-ANTICS | NULLSEC RETRO SERIES        */
+/* ══════════════════════════════════════════════════════ */
+
+OPTIONS RESULTS
+SIGNAL ON ERROR
+SIGNAL ON BREAK_C
+
+SAY ''
+SAY '╔══════════════════════════════════════════════╗'
+SAY '║  AMIGA-DISKAUDIT V1.0                       ║'
+SAY '║  FILESYSTEM SECURITY AUDITOR                ║'
+SAY '║  NullSec Retro Series                       ║'
+SAY '╚══════════════════════════════════════════════╝'
+SAY ''
+
+/* ── MOUNTED VOLUMES ──────────────────────────────── */
+SAY '[ MOUNTED VOLUMES ]'
+SAY '═══════════════════'
+
+ADDRESS COMMAND 'Info >T:diskaudit_info'
+IF RC = 0 THEN DO
+   IF OPEN('inf','T:diskaudit_info','R') THEN DO
+      SAY '  ' || LEFT('VOLUME',20) || LEFT('SIZE',12) || LEFT('USED',12) || LEFT('FREE',12) || 'FULL%'
+      SAY '  ' || COPIES('─',68)
+      DO WHILE ~EOF('inf')
+         LINE = READLN('inf')
+         IF LINE ~= '' THEN SAY '  ' || LINE
+      END
+      CALL CLOSE('inf')
+   END
+END
+SAY ''
+
+/* ── DEVICE LIST ──────────────────────────────────── */
+SAY '[ BLOCK DEVICES ]'
+SAY '═════════════════'
+
+ADDRESS COMMAND 'List >T:diskaudit_dev DEVS: FILES 2>NIL:'
+IF RC = 0 THEN DO
+   IF OPEN('df','T:diskaudit_dev','R') THEN DO
+      DO WHILE ~EOF('df')
+         LINE = READLN('df')
+         IF LINE ~= '' & POS('.device', LINE) > 0 THEN DO
+            SAY '  Device: ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('df')
+   END
+END
+SAY ''
+
+/* ── STARTUP SEQUENCE AUDIT ───────────────────────── */
+SAY '[ STARTUP SEQUENCE AUDIT ]'
+SAY '══════════════════════════'
+SAY '  Checking for suspicious entries...'
+
+STARTUP = 'S:Startup-Sequence'
+IF OPEN('sf', STARTUP, 'R') THEN DO
+   LINENUM = 0
+   SUSPECTS = 0
+   DO WHILE ~EOF('sf')
+      LINE = READLN('sf')
+      LINENUM = LINENUM + 1
+      ULINE = UPPER(LINE)
+
+      /* Check for suspicious patterns */
+      SUSPICIOUS = 0
+      IF POS('RUN ', ULINE) > 0 & POS('>NIL:', ULINE) > 0 THEN SUSPICIOUS = 1
+      IF POS('EXECUTE', ULINE) > 0 & POS('T:', ULINE) > 0 THEN SUSPICIOUS = 1
+      IF POS('COPY', ULINE) > 0 & POS('S:', ULINE) > 0 THEN SUSPICIOUS = 1
+      IF POS('DELETE', ULINE) > 0 & POS('QUIET', ULINE) > 0 THEN SUSPICIOUS = 1
+      IF POS('MOUNT', ULINE) > 0 & POS('FROM', ULINE) > 0 THEN SUSPICIOUS = 1
+
+      IF SUSPICIOUS = 1 THEN DO
+         SUSPECTS = SUSPECTS + 1
+         SAY '  [!] Line ' || LINENUM || ': ' || STRIP(LINE)
+      END
+   END
+   CALL CLOSE('sf')
+   SAY '  Total lines scanned: ' || LINENUM
+   SAY '  Suspicious entries:  ' || SUSPECTS
+   IF SUSPECTS = 0 THEN SAY '  Status: CLEAN'
+   ELSE SAY '  Status: REVIEW RECOMMENDED'
+END
+ELSE SAY '  Cannot open S:Startup-Sequence'
+SAY ''
+
+/* ── USER-STARTUP AUDIT ───────────────────────────── */
+SAY '[ USER-STARTUP AUDIT ]'
+SAY '══════════════════════'
+
+USTARTUP = 'S:User-Startup'
+IF OPEN('uf', USTARTUP, 'R') THEN DO
+   LINENUM = 0
+   DO WHILE ~EOF('uf')
+      LINE = READLN('uf')
+      LINENUM = LINENUM + 1
+      IF LINE ~= '' & LEFT(STRIP(LINE),1) ~= ';' THEN DO
+         SAY '  [' || RIGHT('  '||LINENUM,3) || '] ' || STRIP(LINE)
+      END
+   END
+   CALL CLOSE('uf')
+   SAY '  Active entries: ' || LINENUM
+END
+ELSE SAY '  No User-Startup found'
+SAY ''
+
+/* ── ASSIGN LIST AUDIT ────────────────────────────── */
+SAY '[ LOGICAL ASSIGNS ]'
+SAY '═══════════════════'
+
+ADDRESS COMMAND 'Assign >T:diskaudit_assign'
+IF RC = 0 THEN DO
+   ASSIGNS = 0
+   MULTIASSIGNS = 0
+   IF OPEN('af','T:diskaudit_assign','R') THEN DO
+      DO WHILE ~EOF('af')
+         LINE = READLN('af')
+         IF LINE ~= '' THEN DO
+            ASSIGNS = ASSIGNS + 1
+            IF POS('+', LINE) > 0 THEN MULTIASSIGNS = MULTIASSIGNS + 1
+            SAY '  ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('af')
+   END
+   SAY ''
+   SAY '  Total assigns:    ' || ASSIGNS
+   SAY '  Multi-assigns:    ' || MULTIASSIGNS
+END
+SAY ''
+
+/* ── PROTECTION BIT SCAN ──────────────────────────── */
+SAY '[ PROTECTION BIT SCAN - S: DIRECTORY ]'
+SAY '══════════════════════════════════════'
+SAY '  Checking file permissions...'
+
+ADDRESS COMMAND 'List >T:diskaudit_prot S: ALL LFORMAT "%P%S %A"'
+IF RC = 0 THEN DO
+   WORLD_EXEC = 0
+   SCRIPT = 0
+   IF OPEN('pf','T:diskaudit_prot','R') THEN DO
+      DO WHILE ~EOF('pf')
+         LINE = READLN('pf')
+         IF LINE ~= '' THEN DO
+            /* Check for executable scripts */
+            IF POS('s', LINE) > 0 THEN DO
+               SCRIPT = SCRIPT + 1
+               SAY '  [SCRIPT] ' || STRIP(LINE)
+            END
+            IF POS('e', LINE) > 0 THEN DO
+               WORLD_EXEC = WORLD_EXEC + 1
+            END
+         END
+      END
+      CALL CLOSE('pf')
+   END
+   SAY '  Executable files:  ' || WORLD_EXEC
+   SAY '  Script files:      ' || SCRIPT
+END
+SAY ''
+
+/* ── TEMP DIRECTORY CHECK ─────────────────────────── */
+SAY '[ TEMP DIRECTORY (T:) CONTENTS ]'
+SAY '════════════════════════════════'
+
+ADDRESS COMMAND 'List >T:diskaudit_tmp T: 2>NIL:'
+IF RC = 0 THEN DO
+   TMPFILES = 0
+   IF OPEN('tf','T:diskaudit_tmp','R') THEN DO
+      DO WHILE ~EOF('tf')
+         LINE = READLN('tf')
+         IF LINE ~= '' & POS('diskaudit', LINE) = 0 THEN DO
+            TMPFILES = TMPFILES + 1
+            SAY '  ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('tf')
+   END
+   SAY '  Temp files found: ' || TMPFILES
+   IF TMPFILES > 10 THEN SAY '  [!] High temp file count - review recommended'
+END
+SAY ''
+
+/* ── DISK VALIDATOR CHECK ─────────────────────────── */
+SAY '[ FILESYSTEM INTEGRITY ]'
+SAY '════════════════════════'
+
+ADDRESS COMMAND 'DiskChange DF0: 2>NIL:'
+SAY '  DiskChange sent to DF0:'
+ADDRESS COMMAND 'DiskChange DH0: 2>NIL:'
+SAY '  DiskChange sent to DH0:'
+SAY '  Note: Run DiskSalv or other validator for deep scan'
+SAY ''
+
+/* ── CLEANUP ──────────────────────────────────────── */
+ADDRESS COMMAND 'Delete >NIL: T:diskaudit_#? QUIET'
+
+SAY '╔══════════════════════════════════════════════╗'
+SAY '║  AUDIT COMPLETE                              ║'
+SAY '║  Stay Retro. Stay Secure.                    ║'
+SAY '╚══════════════════════════════════════════════╝'
+SAY ''
+
+EXIT 0
+
+ERROR:
+   SAY 'Error at line ' || SIGL || ': ' || RC
+   ADDRESS COMMAND 'Delete >NIL: T:diskaudit_#? QUIET'
+   EXIT 1
+
+BREAK_C:
+   SAY 'Interrupted by user'
+   ADDRESS COMMAND 'Delete >NIL: T:diskaudit_#? QUIET'
+   EXIT 0

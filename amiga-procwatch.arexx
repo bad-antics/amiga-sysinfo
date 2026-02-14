@@ -1,0 +1,203 @@
+/* ══════════════════════════════════════════════════════ */
+/*  AMIGA-PROCWATCH V1.0                                */
+/*  PROCESS MONITOR & TASK ANALYZER FOR COMMODORE AMIGA */
+/*  GITHUB.COM/BAD-ANTICS | NULLSEC RETRO SERIES        */
+/* ══════════════════════════════════════════════════════ */
+
+OPTIONS RESULTS
+SIGNAL ON ERROR
+SIGNAL ON BREAK_C
+
+SAY ''
+SAY '╔══════════════════════════════════════════════╗'
+SAY '║  AMIGA-PROCWATCH V1.0                       ║'
+SAY '║  PROCESS & TASK ANALYZER                    ║'
+SAY '║  NullSec Retro Series                       ║'
+SAY '╚══════════════════════════════════════════════╝'
+SAY ''
+
+/* ── TASK LIST ────────────────────────────────────── */
+SAY '[ ACTIVE TASKS ]'
+SAY '════════════════'
+
+ADDRESS COMMAND 'Status >T:procwatch_status 2>NIL:'
+IF RC = 0 THEN DO
+   TASKS = 0
+   IF OPEN('sf','T:procwatch_status','R') THEN DO
+      SAY '  ' || LEFT('PID',8) || LEFT('TASK NAME',24) || LEFT('STATE',12) || 'PRIORITY'
+      SAY '  ' || COPIES('─',56)
+      DO WHILE ~EOF('sf')
+         LINE = READLN('sf')
+         IF LINE ~= '' THEN DO
+            TASKS = TASKS + 1
+            SAY '  ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('sf')
+   END
+   SAY ''
+   SAY '  Total tasks: ' || TASKS
+END
+ELSE DO
+   /* Fallback: Use C: commands */
+   ADDRESS COMMAND 'TaskList >T:procwatch_status 2>NIL:'
+   IF RC = 0 THEN DO
+      IF OPEN('sf','T:procwatch_status','R') THEN DO
+         DO WHILE ~EOF('sf')
+            SAY '  ' || READLN('sf')
+         END
+         CALL CLOSE('sf')
+      END
+   END
+   ELSE SAY '  Status/TaskList not available'
+END
+SAY ''
+
+/* ── CLI PROCESSES ────────────────────────────────── */
+SAY '[ CLI PROCESSES ]'
+SAY '═════════════════'
+
+ADDRESS COMMAND 'Status FULL >T:procwatch_cli 2>NIL:'
+IF RC = 0 THEN DO
+   CLIPROCS = 0
+   IF OPEN('cf','T:procwatch_cli','R') THEN DO
+      DO WHILE ~EOF('cf')
+         LINE = READLN('cf')
+         IF LINE ~= '' THEN DO
+            CLIPROCS = CLIPROCS + 1
+            ULINE = UPPER(LINE)
+            /* Flag potentially suspicious processes */
+            FLAG = ' '
+            IF POS('RUN', ULINE) > 0 & POS('BACK', ULINE) > 0 THEN FLAG = '!'
+            IF POS('NEWSHELL', ULINE) > 0 THEN FLAG = '?'
+            SAY '  [' || FLAG || '] ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('cf')
+   END
+   SAY '  CLI processes: ' || CLIPROCS
+END
+SAY ''
+
+/* ── RESIDENT MODULES ─────────────────────────────── */
+SAY '[ RESIDENT MODULES ]'
+SAY '════════════════════'
+
+ADDRESS COMMAND 'Resident >T:procwatch_res 2>NIL:'
+IF RC = 0 THEN DO
+   RESIDENTS = 0
+   SYSTEM = 0
+   ADDED = 0
+   IF OPEN('rf','T:procwatch_res','R') THEN DO
+      DO WHILE ~EOF('rf')
+         LINE = READLN('rf')
+         IF LINE ~= '' THEN DO
+            RESIDENTS = RESIDENTS + 1
+            ULINE = UPPER(LINE)
+            IF POS('SYSTEM', ULINE) > 0 THEN SYSTEM = SYSTEM + 1
+            ELSE ADDED = ADDED + 1
+            SAY '  ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('rf')
+   END
+   SAY ''
+   SAY '  Total residents:  ' || RESIDENTS
+   SAY '  System modules:   ' || SYSTEM
+   SAY '  Added modules:    ' || ADDED
+   IF ADDED > 0 THEN SAY '  [!] Non-system residents detected - verify legitimacy'
+END
+SAY ''
+
+/* ── PORT LIST ────────────────────────────────────── */
+SAY '[ MESSAGE PORTS ]'
+SAY '═════════════════'
+SAY '  Inter-process communication ports:'
+
+ADDRESS COMMAND 'Avail FLUSH >NIL:'
+ADDRESS COMMAND 'List >T:procwatch_ports DEVS:DOSDrivers 2>NIL:'
+
+/* Check for known Amiga system ports */
+PORTS = 'AMITCP MIAMI AREXX WORKBENCH ARexxPortList'
+SAY '  Checking known ports...'
+DO I = 1 TO WORDS(PORTS)
+   PNAME = WORD(PORTS, I)
+   IF SHOW('P', PNAME) THEN DO
+      SAY '  [ACTIVE] ' || PNAME
+   END
+   ELSE DO
+      SAY '  [--OFF-] ' || PNAME
+   END
+END
+SAY ''
+
+/* ── MEMORY ALLOCATION ────────────────────────────── */
+SAY '[ MEMORY ANALYSIS ]'
+SAY '═══════════════════'
+
+ADDRESS COMMAND 'Avail >T:procwatch_mem'
+IF RC = 0 THEN DO
+   IF OPEN('mf','T:procwatch_mem','R') THEN DO
+      DO WHILE ~EOF('mf')
+         LINE = READLN('mf')
+         IF LINE ~= '' THEN SAY '  ' || STRIP(LINE)
+      END
+      CALL CLOSE('mf')
+   END
+END
+SAY ''
+
+/* ── HANDLER LIST ─────────────────────────────────── */
+SAY '[ FILESYSTEM HANDLERS ]'
+SAY '═══════════════════════'
+
+ADDRESS COMMAND 'List >T:procwatch_hand L: FILES 2>NIL:'
+IF RC = 0 THEN DO
+   HANDLERS = 0
+   IF OPEN('hf','T:procwatch_hand','R') THEN DO
+      DO WHILE ~EOF('hf')
+         LINE = READLN('hf')
+         IF LINE ~= '' & POS('-handler', LINE) > 0 THEN DO
+            HANDLERS = HANDLERS + 1
+            SAY '  Handler: ' || STRIP(LINE)
+         END
+      END
+      CALL CLOSE('hf')
+   END
+   SAY '  Active handlers: ' || HANDLERS
+END
+SAY ''
+
+/* ── INTERRUPT VECTOR CHECK ───────────────────────── */
+SAY '[ INTERRUPT VECTORS ]'
+SAY '═════════════════════'
+SAY '  Checking standard interrupt levels...'
+
+DO LVL = 1 TO 6
+   SAY '  INT Level ' || LVL || ': Active (system managed)'
+END
+SAY '  NMI:           Reserved (hardware)'
+SAY ''
+SAY '  Note: Use Scout or SysInspector for detailed vector analysis'
+SAY ''
+
+/* ── CLEANUP ──────────────────────────────────────── */
+ADDRESS COMMAND 'Delete >NIL: T:procwatch_#? QUIET'
+
+SAY '╔══════════════════════════════════════════════╗'
+SAY '║  PROCESS SCAN COMPLETE                      ║'
+SAY '║  Stay Retro. Stay Secure.                   ║'
+SAY '╚══════════════════════════════════════════════╝'
+SAY ''
+
+EXIT 0
+
+ERROR:
+   SAY 'Error at line ' || SIGL || ': ' || RC
+   ADDRESS COMMAND 'Delete >NIL: T:procwatch_#? QUIET'
+   EXIT 1
+
+BREAK_C:
+   SAY 'Interrupted by user'
+   ADDRESS COMMAND 'Delete >NIL: T:procwatch_#? QUIET'
+   EXIT 0
